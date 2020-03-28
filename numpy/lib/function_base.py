@@ -4207,12 +4207,17 @@ def delete(arr, obj, axis=None):
     Parameters
     ----------
     arr : array_like
-      Input array.
+        Input array.
     obj : slice, int or array of ints
-      Indicate indices of sub-arrays to remove along the specified axis.
+        Indicate indices of sub-arrays to remove along the specified axis.
+
+        .. versionchanged:: 1.19.0
+            Boolean indices are now treated as a mask of elements to remove,
+            rather than being cast to the integers 0 and 1.
+
     axis : int, optional
-      The axis along which to delete the subarray defined by `obj`.
-      If `axis` is None, `obj` is applied to the flattened array.
+        The axis along which to delete the subarray defined by `obj`.
+        If `axis` is None, `obj` is applied to the flattened array.
 
     Returns
     -------
@@ -4273,15 +4278,6 @@ def delete(arr, obj, axis=None):
         # needed for np.matrix, which is still not 1d after being ravelled
         ndim = arr.ndim
         axis = ndim - 1
-    elif ndim == 0:
-        # 2013-09-24, 1.9
-        warnings.warn(
-            "in the future the special handling of scalars will be removed "
-            "from delete and raise an error", DeprecationWarning, stacklevel=3)
-        if wrap:
-            return wrap(arr)
-        else:
-            return arr.copy(order=arrorder)
     else:
         axis = normalize_axis_index(axis, ndim)
 
@@ -4339,19 +4335,8 @@ def delete(arr, obj, axis=None):
         else:
             return new
 
-    _obj = obj
-    obj = np.asarray(obj)
-    # After removing the special handling of booleans and out of
-    # bounds values, the conversion to the array can be removed.
-    if obj.dtype == bool:
-        # 2012-10-11, NumPy 1.8
-        warnings.warn("in the future insert will treat boolean arrays and "
-                      "array-likes as boolean index instead of casting it "
-                      "to integer", FutureWarning, stacklevel=3)
-        obj = obj.astype(intp)
-    if isinstance(_obj, (int, long, integer)):
+    if isinstance(obj, (int, integer)) and not isinstance(obj, bool):
         # optimization for a single value
-        obj = obj.item()
         if (obj < -N or obj >= N):
             raise IndexError(
                 "index %i is out of bounds for axis %i with "
@@ -4367,36 +4352,23 @@ def delete(arr, obj, axis=None):
         slobj2[axis] = slice(obj+1, None)
         new[tuple(slobj)] = arr[tuple(slobj2)]
     else:
+        _obj = obj
+        obj = np.asarray(obj)
         if obj.size == 0 and not isinstance(_obj, np.ndarray):
             obj = obj.astype(intp)
-        if not np.can_cast(obj, intp, 'same_kind'):
-            # obj.size = 1 special case always failed and would just
-            # give superfluous warnings.
-            # 2013-09-24, 1.9
-            warnings.warn(
-                "using a non-integer array as obj in delete will result in an "
-                "error in the future", DeprecationWarning, stacklevel=3)
-            obj = obj.astype(intp)
-        keep = ones(N, dtype=bool)
 
-        # Test if there are out of bound indices, this is deprecated
-        inside_bounds = (obj < N) & (obj >= -N)
-        if not inside_bounds.all():
-            # 2013-09-24, NumPy 1.9
-            warnings.warn(
-                "in the future out of bounds indices will raise an error "
-                "instead of being ignored by `numpy.delete`.",
-                DeprecationWarning, stacklevel=3)
-            obj = obj[inside_bounds]
-        positive_indices = obj >= 0
-        if not positive_indices.all():
-            # 2013-04-11, NumPy 1.8
-            warnings.warn(
-                "in the future negative indices will not be ignored by "
-                "`numpy.delete`.", FutureWarning, stacklevel=3)
-            obj = obj[positive_indices]
+        if obj.dtype == bool:
+            if obj.shape != (N,):
+                raise ValueError('boolean array argument obj to delete '
+                                 'must be one dimensional and match the axis '
+                                 'length of {}'.format(N))
 
-        keep[obj, ] = False
+            # optimization, the other branch is slower
+            keep = ~obj
+        else:
+            keep = ones(N, dtype=bool)
+            keep[obj,] = False
+
         slobj[axis] = keep
         new = arr[tuple(slobj)]
 
@@ -4515,17 +4487,6 @@ def insert(arr, obj, values, axis=None):
         # needed for np.matrix, which is still not 1d after being ravelled
         ndim = arr.ndim
         axis = ndim - 1
-    elif ndim == 0:
-        # 2013-09-24, 1.9
-        warnings.warn(
-            "in the future the special handling of scalars will be removed "
-            "from insert and raise an error", DeprecationWarning, stacklevel=3)
-        arr = arr.copy(order=arrorder)
-        arr[...] = values
-        if wrap:
-            return wrap(arr)
-        else:
-            return arr
     else:
         axis = normalize_axis_index(axis, ndim)
     slobj = [slice(None)]*ndim
@@ -4588,13 +4549,6 @@ def insert(arr, obj, values, axis=None):
         return new
     elif indices.size == 0 and not isinstance(obj, np.ndarray):
         # Can safely cast the empty list to intp
-        indices = indices.astype(intp)
-
-    if not np.can_cast(indices, intp, 'same_kind'):
-        # 2013-09-24, 1.9
-        warnings.warn(
-            "using a non-integer array as obj in insert will result in an "
-            "error in the future", DeprecationWarning, stacklevel=3)
         indices = indices.astype(intp)
 
     indices[indices < 0] += N

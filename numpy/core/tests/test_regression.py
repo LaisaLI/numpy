@@ -1408,6 +1408,13 @@ class TestRegression:
                      dtype='U')
         assert_raises(UnicodeEncodeError, np.array, a, 'S4')
 
+    def test_unicode_to_string_cast_error(self):
+        # gh-15790
+        a = np.array([u'\x80'] * 129, dtype='U3')
+        assert_raises(UnicodeEncodeError, np.array, a, 'S')
+        b = a.reshape(3, 43)[:-1, :-1]
+        assert_raises(UnicodeEncodeError, np.array, b, 'S')
+
     def test_mixed_string_unicode_array_creation(self):
         a = np.array(['1234', u'123'])
         assert_(a.itemsize == 16)
@@ -1501,10 +1508,7 @@ class TestRegression:
                 test_type(t)
 
     def test_buffer_hashlib(self):
-        try:
-            from hashlib import md5
-        except ImportError:
-            from md5 import new as md5
+        from hashlib import md5
 
         x = np.array([1, 2, 3], dtype=np.dtype('<i4'))
         assert_equal(md5(x).hexdigest(), '2a1dd1e1e59d0a384c26951e316cd7e6')
@@ -2481,4 +2485,3 @@ class TestRegression:
         assert arr.size * arr.itemsize > 2 ** 31
         c_arr = np.ctypeslib.as_ctypes(arr)
         assert_equal(c_arr._length_, arr.size)
-
